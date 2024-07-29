@@ -1,0 +1,170 @@
+---
+- name: Boilerplate deployment
+  hosts: hng
+  become: yes
+  vars:
+    git_repo_dir: /opt/stage_5b
+    stderr_log_file: /var/log/stage_5b/error.log
+    php_version: "8.3"
+    php_packages:
+      - php{{ php_version }}
+      - php{{ php_version }}-gd
+      - php{{ php_version }}-cli
+      - php{{ php_version }}-fpm
+      - php{{ php_version }}-mysql
+      - php{{ php_version }}-xml
+      - php{{ php_version }}-mbstring
+      - php{{ php_version }}-curl
+      - php{{ php_version }}-zip
+    postgresql_packages:
+      - postgresql
+      - postgresql-contrib
+    DB_HOST: pgsql
+    DB_USERNAME: sail
+    DB_PASSWORD: password
+    DB_DATABASE: testing
+    DB_PORT: 5432
+
+    redis_packages:
+      - redis-server
+    redis_port: REDIS_PORT
+    redis_host: localhost
+    redis_password: REDIS_PASSWORD
+
+  tasks:
+   - name: Create hng user
+     ansible.builtin.user:
+       name: hng
+       shell: /bin/bash
+
+   - name: Add user to sudo group
+     ansible.builtin.user:
+        name: hng
+        groups: sudo
+        append: yes
+
+   - name: Ensure the sudo group has passwordless sudo
+     ansible.builtin.copy:
+        dest: /etc/sudoers.d/sudo
+        content: |
+          %sudo ALL=(ALL) NOPASSWD: ALL
+        mode: '0440'
+
+   - name: Ensure directory /opt/stage_5b exists
+     ansible.builtin.file:
+       path: /opt/stage_5b
+       state: directory
+       owner: hng
+       mode: '0755'
+
+   - name: Install Git
+     apt:
+        name: git
+        state: present
+        update_cache: yes
+
+   - name: Ensure the Git repository directory is marked as safe
+     ansible.builtin.command:
+        cmd: git config --global --add safe.directory {{ git_repo_dir }}
+
+   - name: Pull the latest changes from the repository
+     ansible.builtin.git:
+        repo: 'https://github.com/hngprojects/hng_boilerplate_php_laravel_web.git'
+        dest: "{{ git_repo_dir }}"
+        update: yes
+
+
+   - name: Update the apt package index
+     ansible.builtin.apt:
+        update_cache: yes
+
+   - name: Install Redis
+     ansible.builtin.apt:
+        name: redis-server
+        state: present
+
+   - name: Install PostgreSQL
+     ansible.builtin.apt:
+        name: postgresql
+        state: present
+
+   - name: Install PostgreSQL contrib package
+     ansible.builtin.apt:
+        name: postgresql-contrib
+        state: present
+
+   - name: Ensure Redis is started and enabled at boot
+     ansible.builtin.systemd:
+        name: redis-server
+        enabled: yes
+        state: started
+
+   - name: Ensure PostgreSQL is started and enabled at boot
+     ansible.builtin.systemd:
+        name: postgresql
+        enabled: yes
+        state: started
+
+   - name: Set PostgreSQL admin password
+     become_user: postgres
+     ansible.builtin.shell: |
+        psql -c "ALTER USER {{ DB_USER }} WITH PASSWORD '{{ DB_PASSWORD }}';"
+     environment:
+      PGPASSWORD: "{{ DB_PASSWORD }}"
+
+   - name: Save PostgreSQL admin credentials
+     ansible.builtin.copy:
+        content: "Username: {{ DB_USER }}\nPassword: {{ DB_PASSWORD }}\n"
+        dest: '/var/secrets/pg_pw.txt'
+        owner: hng
+        mode: '0600'
+
+   - name: Update the apt package index
+     ansible.builtin.apt:
+        update_cache: yes
+
+   - name: Install PHP and common extensions
+     ansible.builtin.apt:
+        name: "{{ php_packages }}"
+        state: present
+
+   - name: Ensure PHP-FPM service is running and enabled
+     ansible.builtin.systemd:
+        name: php{{ php_version }}-fpm
+        enabled: yes
+        state: started
+
+   - name: Ensure directory /var/log/stage_5b exists
+     ansible.builtin.file:
+       path: /var/log/stage_5b
+       state: directory
+       owner: hng
+       mode: '0755'
+
+   - name: Ensure directory /var/secrets exists
+     ansible.builtin.file:
+           path: /var/secrets
+           state: directory
+           owner: hng
+           mode: '0755'
+
+
+   - name: Create /var/secrets/pg_pw.txt to store admin user & credentials
+     ansible.builtin.file:
+        path: /var/secrets/pg_pw.txt
+        state: touch
+        mode: '0644'
+
+   - name: Create /var/log/stage_5b/error.log to store stderr logs
+     ansible.builtin.file:
+        path: /var/log/stage_5b/error.log
+        state: touch
+        owner: hng
+        mode: '0644'
+
+   - name: Create /var/log/stage_5b/out.log to store stdout logs
+     ansible.builtin.file:
+        path: /var/log/stage_5b/out.log
+        state: touch
+        owner: hng
+        mode: '0644'
