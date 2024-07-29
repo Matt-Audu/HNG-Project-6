@@ -106,15 +106,16 @@
         state: started
 
    - name: Set PostgreSQL admin password
-     become_user: postgres
+     become: yes
+     become_user: postgres 
      ansible.builtin.shell: |
-        psql -c "ALTER USER {{ DB_USER }} WITH PASSWORD '{{ DB_PASSWORD }}';"
+        psql -c "ALTER USER {{ DB_USERNAME }} WITH PASSWORD '{{ DB_PASSWORD }}';"
      environment:
       PGPASSWORD: "{{ DB_PASSWORD }}"
 
    - name: Save PostgreSQL admin credentials
      ansible.builtin.copy:
-        content: "Username: {{ DB_USER }}\nPassword: {{ DB_PASSWORD }}\n"
+        content: "Username: {{ DB_USERNAME }}\nPassword: {{ DB_PASSWORD }}\n"
         dest: '/var/secrets/pg_pw.txt'
         owner: hng
         mode: '0600'
